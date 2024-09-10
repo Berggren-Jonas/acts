@@ -158,16 +158,17 @@ def main():
         for gmBox in gmBoxes:
             gmBoxSurfaces.extend(gmBox.surfaces())
         gmSurfaces = [ss[1] for ss in gmFactoryCache.sensitiveSurfaces]
-        unboundSurfaces = [item for item in gmSurfaces if item not in gmBoxSurfaces]
+        #unboundSurfaces = [item for item in gmSurfaces if item not in gmBoxSurfaces]
+        print(len(gmSurfaces))
 
-        acts.examples.writeVolumesSurfacesObj(
+        '''acts.examples.writeVolumesSurfacesObj(
             unboundSurfaces,
             gmBoxes,
             gContext,
             [75, 220, 100],
             segments,
             args.output + "_vols.obj",
-        )
+        )'''
 
 
 if "__main__" == __name__:
