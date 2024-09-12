@@ -29,6 +29,12 @@
 #include "ActsExamples/Generators/ParametricParticleGenerator.hpp"
 //#include "ActsExamples/MuonSpectrometerMockupDetector/MockupSectorBuilder.hpp"
 
+#include <ctime>
+#include <fstream>
+
+#include <TFile.h>
+#include <TStopwatch.h>
+#include <TTree.h>
 BOOST_AUTO_TEST_SUITE(GeoModelPlugin)
 
 Acts::GeometryContext gContext;
@@ -69,11 +75,16 @@ BOOST_AUTO_TEST_CASE(proTest) {
       std::move(bounds), surfaces, boxes,
       Acts::Experimental::tryAllSubVolumes(),
       Acts::Experimental::tryAllPortalsAndSurfaces());
+
+  //geometry of the world volume
   auto rMax = worldVolume->volumeBounds().values()[1];
   auto hlengthZ = worldVolume->volumeBounds().values()[2];
   float theta = std::acos(hlengthZ / rMax);
   std::vector<float> pTValue = {1.};
+
+  //iterate over pt values
   for (std::size_t i = 0; i < pTValue.size(); i++) {
+    //generate particles
     ActsExamples::ParametricParticleGenerator::Config pCfg;
     pCfg.thetaMin = theta;
     pCfg.thetaMax = M_PI - theta;
@@ -93,6 +104,23 @@ BOOST_AUTO_TEST_CASE(proTest) {
         Acts::Vector3 mom = ip.momentum();
         Acts::ActsScalar pT = ip.transverseMomentum();
         auto eta = -std::log(std::tan(ip.theta() / 2));
+        Acts::ActsScalar qOverp = ip.qOverP();
+        Acts::ParticleHypothesis phypothesis = ip.hypothesis();
+        Acts::CurvilinearTrackParameters start(pos, ip.phi(), ip.theta(), qOverp,
+                                         std::nullopt, phypothesis);
+        TStopwatch watch{};
+        watch.Start();
+        /*
+        Acts::PropagatorOptions options;
+        options.direction = Acts::direction::Backward;
+        options.pathLimit = pathLimit;
+
+        const auto& presult = propagator.propagate(start, options).value();
+
+        watch.Stop();
+        realTime = (watch.RealTime() * 1000.);
+        cpuTime = (watch.CpuTime() * 1000.);
+        */
       }
     }
   }
