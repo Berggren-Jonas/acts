@@ -1,4 +1,4 @@
-set(unittest_extra_libraries ActsPluginGeoModel)
+set(unittest_extra_libraries ActsPluginGeoModel ActsExamplesGenerators)
 
 add_unittest(GeoModelDetectorElement GeoModelDetectorElementTests.cpp)
 add_unittest(GeoBoxConverter GeoBoxConverterTests.cpp)
