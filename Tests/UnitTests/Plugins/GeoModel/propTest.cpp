@@ -63,7 +63,7 @@ BOOST_AUTO_TEST_CASE(proTest) {
     for (int nj = 0; nj < njobs; nj++) {
       ActsExamples::ParametricParticleGenerator pgenerator{pCfg};
       auto rnd = std::make_shared<ActsExamples::RandomNumbers>(
-          ActsExamples::RandomNumbers::Config{nj});
+          ActsExamples::RandomNumbers::Config{static_cast<uint64_t>(nj)});
       ActsExamples::AlgorithmContext alContext(0, i, eventStore);
       ActsExamples::RandomEngine randomEng = rnd->spawnGenerator(alContext);
       auto particles = pgenerator(randomEng);
