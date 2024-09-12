@@ -36,6 +36,29 @@ Acts::GeometryContext gContext;
 
 
 BOOST_AUTO_TEST_CASE(proTest) {
+  //Setting parameters for conversion
+  Acts::GeoModelDetectorObjectFactory::Config factoryCfg;
+  factoryCfg.materialList = {"Aluminium"};
+  factoryCfg.nameList = {"MDT", "Tube"};
+  factoryCfg.convertBox = {"MDT"};
+  Acts::GeoModelDetectorObjectFactory::Options factoryOpt;
+  factoryOpt.queries = {"Muon"};
+  Acts::GeoModelDetectorObjectFactory::Cache cache;
+  Acts::GeoModelTree tree = Acts::GeoModelReader::readFromDb("/home/cberggre/ATLAS-R3-MUONTEST_v3.db");
+
+  //converting
+  auto factory = Acts::GeoModelDetectorObjectFactory(factoryCfg);
+  factory.construct(cache, gContext, tree, factoryOpt);
+  auto sensSurfaces = cache.sensitiveSurfaces;
+  auto boxes = cache.boundingBoxes;
+  std::vector<std::shared_ptr<Acts::Surface>> surfaces(sensSurfaces.size());
+  std::transform(sensSurfaces.begin(), sensSurfaces.end(), surfaces.begin(),
+                 [](const std::tuple<std::shared_ptr<Acts::GeoModelDetectorElement>,
+                                     std::shared_ptr<Acts::Surface>>& t) {
+                   return std::get<1>(t);
+                 });
+
+  //constructing word volume
   auto bounds = std::make_unique<Acts::CylinderVolumeBounds>(
       0, 15000, 25000);
   auto worldVolume = Acts::Experimental::DetectorVolumeFactory::construct(
@@ -43,11 +66,9 @@ BOOST_AUTO_TEST_CASE(proTest) {
       "World_Detector_Volume",
       Acts::Transform3(Acts::Transform3::Identity() *
                  Acts::AngleAxis3(M_PI / 2, Acts::Vector3(0., 0., 1))),
-      std::move(bounds), std::vector<std::shared_ptr<Acts::Surface>>{},
-      std::vector<std::shared_ptr<Acts::Experimental::DetectorVolume>>{},
+      std::move(bounds), surfaces, boxes,
       Acts::Experimental::tryAllSubVolumes(),
       Acts::Experimental::tryAllPortalsAndSurfaces());
-  //worldVolume->assignGeometryId(Acts::GeometryIdentifier{}.setVolume(250));
   auto rMax = worldVolume->volumeBounds().values()[1];
   auto hlengthZ = worldVolume->volumeBounds().values()[2];
   float theta = std::acos(hlengthZ / rMax);
@@ -66,11 +87,13 @@ BOOST_AUTO_TEST_CASE(proTest) {
           ActsExamples::RandomNumbers::Config{static_cast<uint64_t>(nj)});
       ActsExamples::AlgorithmContext alContext(0, i, eventStore);
       ActsExamples::RandomEngine randomEng = rnd->spawnGenerator(alContext);
-      auto particles = pgenerator(randomEng);
-      /*
+      auto particles = std::get<1>(pgenerator(randomEng));
       for (auto ip : particles) {
+        Acts::Vector4 pos = ip.fourPosition();
+        Acts::Vector3 mom = ip.momentum();
+        Acts::ActsScalar pT = ip.transverseMomentum();
+        auto eta = -std::log(std::tan(ip.theta() / 2));
       }
-      */
     }
   }
 }
