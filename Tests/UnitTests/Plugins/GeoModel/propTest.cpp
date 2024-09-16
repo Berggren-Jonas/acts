@@ -25,6 +25,7 @@
 #include "Acts/Propagator/ActionList.hpp"
 #include "Acts/Propagator/EigenStepper.hpp"
 #include "Acts/Propagator/Propagator.hpp"
+#include "Acts/Propagator/StraightLineStepper.hpp"
 #include "Acts/Propagator/SurfaceCollector.hpp"
 #include "ActsExamples/Generators/ParametricParticleGenerator.hpp"
 //#include "ActsExamples/MuonSpectrometerMockupDetector/MockupSectorBuilder.hpp"
@@ -38,7 +39,17 @@
 BOOST_AUTO_TEST_SUITE(GeoModelPlugin)
 
 Acts::GeometryContext gContext;
+Acts::MagneticFieldContext mfContext;
+struct StrawSelector {
+  /// Call operator
+  /// @param sf The input surface to be checked
+  bool operator()(const Acts::Surface& sf) const {
+    return (sf.type() == Acts::Surface::Straw);
+  }
+};
 
+using ActionListType = Acts::ActionList<Acts::SurfaceCollector<StrawSelector>>;
+using AbortListType = Acts::AbortList<Acts::EndOfWorldReached>;
 
 
 BOOST_AUTO_TEST_CASE(proTest) {
@@ -51,6 +62,7 @@ BOOST_AUTO_TEST_CASE(proTest) {
   factoryOpt.queries = {"Muon"};
   Acts::GeoModelDetectorObjectFactory::Cache cache;
   Acts::GeoModelTree tree = Acts::GeoModelReader::readFromDb("/home/cberggre/ATLAS-R3-MUONTEST_v3.db");
+  std::cout << "Got database" << std::endl;
 
   //converting
   auto factory = Acts::GeoModelDetectorObjectFactory(factoryCfg);
@@ -63,6 +75,16 @@ BOOST_AUTO_TEST_CASE(proTest) {
                                      std::shared_ptr<Acts::Surface>>& t) {
                    return std::get<1>(t);
                  });
+  for (int j=0;j<boxes.size();j++){
+    boxes[j]->assignGeometryId(Acts::GeometryIdentifier{}.setVolume(j));
+    auto tubes = boxes[j]->surfacePtrs();
+    for (int k=0;k<tubes.size();k++){
+      tubes[k]->assignGeometryId(Acts::GeometryIdentifier{}.setLayer(1).setVolume(j).setSensitive(k));
+    }
+  }
+  //for (int i=0;i<surfaces.size();i++){
+    //surfaces[i]->assignGeometryId(Acts::GeometryIdentifier{}.setLayer(chId.first).setVolume(chId.second).setSensitive(++surfId));
+  //}
 
   //constructing word volume
   auto bounds = std::make_unique<Acts::CylinderVolumeBounds>(
@@ -72,15 +94,17 @@ BOOST_AUTO_TEST_CASE(proTest) {
       "World_Detector_Volume",
       Acts::Transform3(Acts::Transform3::Identity() *
                  Acts::AngleAxis3(M_PI / 2, Acts::Vector3(0., 0., 1))),
-      std::move(bounds), surfaces, boxes,
+      std::move(bounds), std::vector<std::shared_ptr<Acts::Surface>>{}, boxes,
       Acts::Experimental::tryAllSubVolumes(),
       Acts::Experimental::tryAllPortalsAndSurfaces());
+  worldVolume->assignGeometryId(Acts::GeometryIdentifier{}.setVolume(surfaces.size()+boxes.size()));
 
   //geometry of the world volume
   auto rMax = worldVolume->volumeBounds().values()[1];
   auto hlengthZ = worldVolume->volumeBounds().values()[2];
   float theta = std::acos(hlengthZ / rMax);
   std::vector<float> pTValue = {1.};
+  std::cout << " got geometry" << std::endl;
 
   //iterate over pt values
   for (std::size_t i = 0; i < pTValue.size(); i++) {
@@ -92,6 +116,7 @@ BOOST_AUTO_TEST_CASE(proTest) {
         Acts::getDefaultLogger("Event_Store", Acts::Logging::Level::WARNING),
         {{"Particles_pT", std::to_string(pTValue[i])}});
     int njobs = 100;
+    std::cout << "starting jobs" << std::endl;
     for (int nj = 0; nj < njobs; nj++) {
       ActsExamples::ParametricParticleGenerator pgenerator{pCfg};
       auto rnd = std::make_shared<ActsExamples::RandomNumbers>(
@@ -99,6 +124,7 @@ BOOST_AUTO_TEST_CASE(proTest) {
       ActsExamples::AlgorithmContext alContext(0, i, eventStore);
       ActsExamples::RandomEngine randomEng = rnd->spawnGenerator(alContext);
       auto particles = std::get<1>(pgenerator(randomEng));
+      std::cout << "generating particles" << std::endl;
       for (auto ip : particles) {
         Acts::Vector4 pos = ip.fourPosition();
         Acts::Vector3 mom = ip.momentum();
@@ -108,19 +134,30 @@ BOOST_AUTO_TEST_CASE(proTest) {
         Acts::ParticleHypothesis phypothesis = ip.hypothesis();
         Acts::CurvilinearTrackParameters start(pos, ip.phi(), ip.theta(), qOverp,
                                          std::nullopt, phypothesis);
-        TStopwatch watch{};
-        watch.Start();
-        /*
-        Acts::PropagatorOptions options;
-        options.direction = Acts::direction::Backward;
-        options.pathLimit = pathLimit;
+        using Propagator = Acts::Propagator<Acts::StraightLineStepper,Acts::Experimental::DetectorNavigator>;
+        //using PropagatorOptions = Propagator::Options<>;
+        using PropagatorOptions = Propagator::Options<ActionListType, AbortListType>;
+        std::cout << "decpared propagator" << std::endl;
+        // Set the stepper for the propagator with a magnetic field
+        auto stepper = Acts::StraightLineStepper();
+        std::cout << "stepper" << std::endl;
+        Acts::Experimental::DetectorNavigator::Config navCfg;
+        std::cout << "nav config" << std::endl;
+        auto detector_sector = Acts::Experimental::Detector::makeShared(
+          "Detector", {worldVolume}, Acts::Experimental::tryRootVolumes());
+        std::cout << "detector sector" << std::endl;
+        navCfg.detector = detector_sector.get();
+        auto navigator = Acts::Experimental::DetectorNavigator(
+            navCfg, Acts::getDefaultLogger("DetectorNavigator",
+                                     Acts::Logging::Level::WARNING));
+        std::cout << "set navigation" << std::endl;
 
+        Propagator propagator(stepper, navigator);
+        PropagatorOptions options(gContext, {});
+        options.direction = Acts::Direction::Backward;
         const auto& presult = propagator.propagate(start, options).value();
-
-        watch.Stop();
-        realTime = (watch.RealTime() * 1000.);
-        cpuTime = (watch.CpuTime() * 1000.);
-        */
+        auto& cSurfaces =
+          presult.get<Acts::SurfaceCollector<StrawSelector>::result_type>();
       }
     }
   }
